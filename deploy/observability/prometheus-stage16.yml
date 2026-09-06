@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 2s
+
+scrape_configs:
+  - job_name: minimesh-sidecars
+    static_configs:
+      - targets:
+          - stage9-sidecar-order:18081
+          - stage9-sidecar-inventory:18081
+          - stage9-sidecar-recommendation:18081
+          - stage16-sidecar-chaos:18081
+  - job_name: fault-proxies
+    static_configs:
+      - targets:
+          - stage16-toxiproxy-control:8474
+          - stage16-toxiproxy-network:8474

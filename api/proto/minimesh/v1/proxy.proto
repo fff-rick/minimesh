@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package minimesh.v1;
+
+option go_package = "github.com/minimesh/minimesh/api/gen/minimesh/v1;minimeshv1";
+option java_package = "io.minimesh.v1";
+option java_multiple_files = true;
+
+// Payload is the Stage 1 transport payload. Later stages can replace this
+// minimal envelope with richer, service-aware routing contracts.
+message Payload {
+  bytes data = 1;
+}
+
+// ProxyRequest tells a sidecar exactly which backend address and gRPC method
+// to invoke. Stage 2 replaces the explicit target address with discovery.
+message ProxyRequest {
+  string target = 1;
+  string full_method = 2;
+  Payload payload = 3;
+  // When true, payload.data already contains the serialized request expected
+  // by full_method. The sidecar forwards those protobuf bytes without adding
+  // the Payload envelope. This keeps the Stage 1 Echo compatibility mode
+  // while enabling typed, cross-language business services in Stage 9.
+  bool passthrough_payload = 4;
+}
+
+message ProxyResponse {
+  Payload payload = 1;
+}
+
+service ProxyService {
+  rpc Invoke(ProxyRequest) returns (ProxyResponse);
+}
+
+// EchoService is the Stage 1 Go backend used by the runnable demo/tests.
+service EchoService {
+  rpc Echo(Payload) returns (Payload);
+}

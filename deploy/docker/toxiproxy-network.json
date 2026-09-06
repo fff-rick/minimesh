@@ -1,0 +1,8 @@
+[
+  {
+    "name": "minimesh_stage16_backend",
+    "listen": "0.0.0.0:29090",
+    "upstream": "stage16-echo-network:19090",
+    "enabled": true
+  }
+]

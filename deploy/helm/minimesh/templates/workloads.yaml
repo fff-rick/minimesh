@@ -1,0 +1,196 @@
+{{- range $name, $service := .Values.services }}
+{{- $transparent := and $.Values.transparentProxy.enabled (eq $name "inventory") }}
+{{- $secure := $.Values.security.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "minimesh.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "minimesh.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $.Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      {{- if $secure }}
+      annotations:
+        minimesh.io/identity-revision: {{ $.Values.security.revision | quote }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "minimesh.name" $ }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      terminationGracePeriodSeconds: 15
+      {{- if $transparent }}
+      initContainers:
+        - name: transparent-init
+          image: {{ $.Values.images.transparentInit | quote }}
+          imagePullPolicy: {{ $.Values.images.pullPolicy }}
+          env:
+            - {name: PROXY_UID, value: {{ $.Values.transparentProxy.proxyUID | quote }}}
+            - {name: PROXY_PORT, value: {{ $.Values.transparentProxy.listenPort | quote }}}
+            - {name: OUTBOUND_PORTS, value: {{ join "," $.Values.transparentProxy.outboundPorts | quote }}}
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_ADMIN"]
+            seccompProfile: {type: RuntimeDefault}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ index $.Values.images $service.imageKey | quote }}
+          imagePullPolicy: {{ $.Values.images.pullPolicy }}
+          {{- if $transparent }}
+          args:
+            - --listen=:{{ $service.port }}
+            - --recommendation={{ include "minimesh.fullname" $ }}-recommendation:{{ $.Values.services.recommendation.port }}
+          {{- else }}
+          {{- with $service.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- end }}
+          {{- if eq $name "order" }}
+          env:
+            - {name: ORDER_PORT, value: {{ $service.port | quote }}}
+            - {name: SIDECAR_ADDRESS, value: "127.0.0.1:{{ $.Values.sidecar.grpcPort }}"}
+          {{- else if eq $name "recommendation" }}
+          env:
+            - {name: RECOMMENDATION_PORT, value: {{ $service.port | quote }}}
+          {{- end }}
+          ports:
+            - {name: grpc, containerPort: {{ $service.port }}}
+          startupProbe:
+            tcpSocket: {port: grpc}
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            tcpSocket: {port: grpc}
+            periodSeconds: 3
+          livenessProbe:
+            tcpSocket: {port: grpc}
+            periodSeconds: 10
+          resources:
+            {{- toYaml $.Values.resources.business | nindent 12 }}
+        - name: sidecar
+          image: {{ $.Values.images.sidecar | quote }}
+          imagePullPolicy: {{ $.Values.images.pullPolicy }}
+          args:
+            - --listen=:{{ $.Values.sidecar.grpcPort }}
+            - --metrics-listen=:{{ $.Values.sidecar.metricsPort }}
+            - --control-plane=$(CONTROL_PLANE_ADDRESS)
+            - --sidecar-id=$(POD_NAME)
+            - --registry-address=$(REGISTRY_ADDRESS)
+            - --register-service={{ $name }}
+            - --register-instance=$(POD_NAME)
+            {{- if $secure }}
+            - --register-address=$(POD_IP):{{ $.Values.security.mtlsPort }}
+            {{- else }}
+            - --register-address=$(POD_IP):{{ $service.port }}
+            {{- end }}
+            - --register-ttl=$(REGISTRATION_TTL)
+            {{- with $service.readinessServices }}
+            - --readiness-services={{ . }}
+            {{- end }}
+            - --request-timeout={{ $.Values.sidecar.requestTimeout }}
+            - --max-attempts={{ $.Values.sidecar.maxAttempts }}
+            - --max-idle={{ $.Values.sidecar.maxIdle }}
+            - --keepalive-time={{ $.Values.sidecar.keepaliveTime }}
+            {{- if $transparent }}
+            - --transparent-listen=0.0.0.0:{{ $.Values.transparentProxy.listenPort }}
+            {{- end }}
+            {{- if $secure }}
+            - --mtls-listen=:{{ $.Values.security.mtlsPort }}
+            - --mtls-backend=127.0.0.1:{{ $service.port }}
+            - --mtls-ca=/var/run/minimesh/tls/ca.crt
+            - --mtls-cert=/var/run/minimesh/tls/tls.crt
+            - --mtls-key=/var/run/minimesh/tls/tls.key
+            - --mtls-trust-domain={{ $.Values.security.trustDomain }}
+            - --mtls-namespace={{ $.Release.Namespace }}
+            - --mtls-allowed-peer-services={{ join "," (index $.Values.security.allowedPeers $name) }}
+            {{- end }}
+          envFrom:
+            - configMapRef: {name: {{ include "minimesh.fullname" $ }}-config}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+          ports:
+            - {name: sidecar-grpc, containerPort: {{ $.Values.sidecar.grpcPort }}}
+            - {name: metrics, containerPort: {{ $.Values.sidecar.metricsPort }}}
+            {{- if $transparent }}
+            - {name: transparent, containerPort: {{ $.Values.transparentProxy.listenPort }}}
+            {{- end }}
+            {{- if $secure }}
+            - {name: mtls, containerPort: {{ $.Values.security.mtlsPort }}}
+            {{- end }}
+          {{- if or $transparent $secure }}
+          securityContext:
+            runAsUser: 1337
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+          {{- end }}
+          startupProbe:
+            tcpSocket: {port: sidecar-grpc}
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /livez, port: metrics}
+            periodSeconds: 10
+          resources:
+            {{- toYaml $.Values.sidecar.resources | nindent 12 }}
+          {{- if $secure }}
+          volumeMounts:
+            - name: workload-identity
+              mountPath: /var/run/minimesh/tls
+              readOnly: true
+          {{- end }}
+      {{- if $secure }}
+      volumes:
+        - name: workload-identity
+          secret:
+            secretName: {{ $.Values.security.secretPrefix }}-{{ $name }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minimesh.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "minimesh.labels" $ | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $name }}
+  ports:
+    - {name: grpc, port: {{ $service.port }}, targetPort: grpc}
+---
+{{- end }}
+
+{{- if .Values.security.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minimesh.fullname" . }}-order-sidecar
+  labels:
+    {{- include "minimesh.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: order
+  ports:
+    - {name: grpc, port: {{ .Values.sidecar.grpcPort }}, targetPort: sidecar-grpc}
+{{- end }}

@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package minimesh.v1;
+
+option go_package = "github.com/minimesh/minimesh/api/gen/minimesh/v1;minimeshv1";
+option java_package = "io.minimesh.v1";
+option java_multiple_files = true;
+
+// ControlMessage is the envelope for the persistent control-plane stream.
+// version is the authoritative etcd revision for configuration sent by the
+// control plane. Sidecars only apply strictly newer versions.
+message ControlMessage {
+  uint64 version = 1;
+
+  oneof payload {
+    SidecarRegister register = 10;
+    SidecarHeartbeat heartbeat = 11;
+    EndpointUpdate endpoint_update = 12;
+    RouteUpdate route_update = 13;
+    Ack ack = 14;
+  }
+}
+
+message SidecarRegister {
+  string sidecar_id = 1;
+  uint64 last_applied_version = 2;
+}
+
+message SidecarHeartbeat {
+  string sidecar_id = 1;
+}
+
+// EndpointUpdate deliberately carries a complete snapshot. Replaying a
+// snapshot is idempotent, so reconnects, lost ACKs and control-plane restarts
+// all converge without maintaining a per-sidecar delta log.
+message EndpointUpdate {
+  repeated Endpoint endpoints = 1;
+  bool full_sync = 2;
+}
+
+message Endpoint {
+  string service = 1;
+  string instance_id = 2;
+  string address = 3;
+  map<string, string> metadata = 4;
+}
+
+// Reserved for Stage 8 route configuration. The current data plane has no
+// route policy consumer yet, but keeps the envelope forward-compatible.
+message RouteUpdate {
+  repeated Route routes = 1;
+  bool full_sync = 2;
+}
+
+message Route {
+  string service = 1;
+  string full_method = 2;
+  string target = 3;
+}
+
+message Ack {
+  uint64 version = 1;
+}
+
+service ControlService {
+  rpc Stream(stream ControlMessage) returns (stream ControlMessage);
+}

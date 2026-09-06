@@ -1,0 +1,73 @@
+replicaCount: 1
+
+images:
+  pullPolicy: IfNotPresent
+  sidecar: minimesh/sidecar:stage13
+  controlPlane: minimesh/control-plane:stage13
+  order: minimesh/order:stage13
+  inventory: minimesh/inventory:stage13
+  recommendation: minimesh/recommendation:stage13
+  etcd: quay.io/coreos/etcd:v3.5.15
+  transparentInit: minimesh/iptables-init:stage14
+  client: minimesh/client:stage15
+
+transparentProxy:
+  enabled: false
+  listenPort: 15001
+  proxyUID: 1337
+  outboundPorts: [19092]
+
+security:
+  enabled: false
+  # Change this value when the trust bundle changes so workloads restart and
+  # rebuild their CA pools. Leaf certificates are reloaded without a restart.
+  revision: ""
+  trustDomain: minimesh.local
+  mtlsPort: 15443
+  secretPrefix: minimesh-identity
+  allowedPeers:
+    order: []
+    inventory: [order]
+    recommendation: [inventory]
+
+sidecar:
+  grpcPort: 18080
+  metricsPort: 18081
+  registrationTTL: 15s
+  requestTimeout: 2s
+  maxAttempts: 3
+  maxIdle: 30s
+  keepaliveTime: 30s
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 500m, memory: 128Mi}
+
+controlPlane:
+  registryPort: 17070
+  streamPort: 17071
+  leaseTTL: 15
+
+services:
+  order:
+    port: 19090
+    imageKey: order
+    readinessServices: inventory
+  inventory:
+    port: 19091
+    imageKey: inventory
+    args: ["--listen=:19091", "--sidecar=127.0.0.1:18080"]
+    readinessServices: recommendation
+  recommendation:
+    port: 19092
+    imageKey: recommendation
+
+resources:
+  business:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: "1", memory: 256Mi}
+  controlPlane:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 500m, memory: 128Mi}
+  etcd:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}

@@ -1,0 +1,19 @@
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Go
+bin/
+coverage.out
+*.test
+artifacts/
+
+# Java / Maven build outputs
+examples/java/order-service/target/
+
+# Local environment
+.env
+
+# Runtime data
+.etcd-data/

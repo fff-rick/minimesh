@@ -1,0 +1,12 @@
+images:
+  sidecar: minimesh/sidecar:stage14
+  inventory: minimesh/inventory:stage14
+  transparentInit: minimesh/iptables-init:stage14
+
+transparentProxy:
+  enabled: true
+  listenPort: 15001
+  proxyUID: 1337
+  # Stage 14 captures only the Recommendation business port. Broad capture is
+  # deferred until exclusions and failure behavior are production-hardened.
+  outboundPorts: [19092]

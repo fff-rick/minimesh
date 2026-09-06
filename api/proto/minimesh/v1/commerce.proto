@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package minimesh.v1;
+
+option go_package = "github.com/minimesh/minimesh/api/gen/minimesh/v1;minimeshv1";
+option java_package = "io.minimesh.v1";
+option java_multiple_files = true;
+
+// These deliberately small, typed business contracts are shared unchanged by
+// the Java, Go and Python Stage 9 examples. The sidecar only transports their
+// serialized bytes and is therefore independent of business language and API.
+message OrderRequest {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message OrderResponse {
+  string order_id = 1;
+  bool available = 2;
+  string recommendation = 3;
+  string trace_id = 4;
+  string request_id = 5;
+}
+
+message InventoryRequest {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message InventoryResponse {
+  bool available = 1;
+  string recommendation = 2;
+  string trace_id = 3;
+  string request_id = 4;
+}
+
+message RecommendationRequest {
+  string sku = 1;
+}
+
+message RecommendationResponse {
+  string recommendation = 1;
+  string trace_id = 2;
+  string request_id = 3;
+}
+
+service OrderService {
+  rpc PlaceOrder(OrderRequest) returns (OrderResponse);
+}
+
+service InventoryService {
+  rpc CheckInventory(InventoryRequest) returns (InventoryResponse);
+}
+
+service RecommendationService {
+  rpc Recommend(RecommendationRequest) returns (RecommendationResponse);
+}

@@ -1,0 +1,3 @@
+# Build outputs must never become image inputs: Maven may then reuse stale
+# classes even after the corresponding Java source has changed.
+examples/java/order-service/target

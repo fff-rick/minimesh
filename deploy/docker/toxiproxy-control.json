@@ -1,0 +1,14 @@
+[
+  {
+    "name": "minimesh_stage16_etcd",
+    "listen": "0.0.0.0:22379",
+    "upstream": "etcd:2379",
+    "enabled": true
+  },
+  {
+    "name": "minimesh_stage16_control_stream",
+    "listen": "0.0.0.0:27071",
+    "upstream": "stage9-control-plane:17071",
+    "enabled": true
+  }
+]

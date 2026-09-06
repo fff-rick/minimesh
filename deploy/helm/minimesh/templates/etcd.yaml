@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "minimesh.fullname" . }}-etcd
+  labels:
+    {{- include "minimesh.labels" . | nindent 4 }}
+    app.kubernetes.io/component: etcd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: etcd
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "minimesh.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: etcd
+    spec:
+      containers:
+        - name: etcd
+          image: {{ .Values.images.etcd | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/usr/local/bin/etcd"]
+          args:
+            - --name=minimesh-etcd
+            - --data-dir=/etcd-data
+            - --listen-client-urls=http://0.0.0.0:2379
+            - --advertise-client-urls=http://{{ include "minimesh.fullname" . }}-etcd:2379
+            - --listen-peer-urls=http://0.0.0.0:2380
+            - --initial-advertise-peer-urls=http://127.0.0.1:2380
+            - --initial-cluster=minimesh-etcd=http://127.0.0.1:2380
+          ports:
+            - {name: client, containerPort: 2379}
+          readinessProbe:
+            exec:
+              command: ["etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+            periodSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.etcd | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /etcd-data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minimesh.fullname" . }}-etcd
+  labels:
+    {{- include "minimesh.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: etcd
+  ports:
+    - {name: client, port: 2379, targetPort: client}

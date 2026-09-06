@@ -1,0 +1,20 @@
+images:
+  sidecar: minimesh/sidecar:stage15
+  inventory: minimesh/inventory:stage15
+  client: minimesh/client:stage15
+
+security:
+  enabled: true
+  trustDomain: minimesh.local
+  mtlsPort: 15443
+  secretPrefix: minimesh-identity
+  allowedPeers:
+    order: []
+    inventory: [order]
+    recommendation: [inventory]
+
+sidecar:
+  # Make an idle channel re-handshake so a rotated leaf certificate is picked
+  # up without restarting the Sidecar process.
+  maxIdle: 2s
+  keepaliveTime: 0s

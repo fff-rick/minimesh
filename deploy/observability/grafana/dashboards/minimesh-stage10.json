@@ -1,0 +1,77 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {"title": "Explore traces in Jaeger", "type": "link", "url": "http://localhost:16686", "targetBlank": true}
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [{"expr": "sum by (service, code) (rate(minimesh_request_total[$__rate_interval]))", "legendFormat": "{{service}} {{code}}", "refId": "A"}],
+      "title": "Request rate and errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, service) (rate(minimesh_request_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "{{service}}", "refId": "A"}],
+      "title": "Request latency P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "id": 3,
+      "targets": [{"expr": "sum by (service) (increase(minimesh_retry_total[$__range]))", "legendFormat": "{{service}}", "refId": "A"}],
+      "title": "Retries",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "id": 4,
+      "targets": [{"expr": "sum by (service) (increase(minimesh_circuit_breaker_total[$__range]))", "legendFormat": "{{service}}", "refId": "A"}],
+      "title": "Circuit breaker rejections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "id": 5,
+      "targets": [{"expr": "sum by (service) (increase(minimesh_rate_limit_rejected_total[$__range]))", "legendFormat": "{{service}}", "refId": "A"}],
+      "title": "Rate-limit rejections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 16},
+      "id": 6,
+      "targets": [
+        {"expr": "sum by (instance) (minimesh_active_connections)", "legendFormat": "{{instance}} active", "refId": "A"},
+        {"expr": "sum by (instance) (minimesh_idle_connections)", "legendFormat": "{{instance}} idle", "refId": "B"}
+      ],
+      "title": "Upstream connections",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 41,
+  "tags": ["minimesh", "stage10"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timezone": "browser",
+  "title": "MiniMesh Stage 10 Observability",
+  "uid": "minimesh-stage10",
+  "version": 1
+}

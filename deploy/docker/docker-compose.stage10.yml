@@ -1,0 +1,55 @@
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.15.0
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports: ["9090:9090"]
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    ports: ["3000:3000"]
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus, jaeger]
+
+  stage9-sidecar-order:
+    command: ["--listen=:18080", "--control-plane=stage9-control-plane:17071", "--sidecar-id=stage9-order", "--max-attempts=1", "--service-name=sidecar-order", "--otel-endpoint=http://jaeger:4318/v1/traces"]
+    ports: ["38081:18081"]
+    depends_on: [stage9-control-plane, jaeger]
+
+  stage9-sidecar-inventory:
+    command: ["--listen=:18080", "--control-plane=stage9-control-plane:17071", "--sidecar-id=stage9-inventory", "--max-attempts=1", "--service-name=sidecar-inventory", "--otel-endpoint=http://jaeger:4318/v1/traces"]
+    ports: ["38082:18081"]
+    depends_on: [stage9-control-plane, jaeger]
+
+  stage9-inventory:
+    environment:
+      OTEL_SERVICE_NAME: inventory
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+    depends_on: [stage9-sidecar-inventory, jaeger]
+
+  stage9-recommendation:
+    environment:
+      OTEL_SERVICE_NAME: recommendation
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+    depends_on: [stage9-control-plane, jaeger]
+
+  stage9-order:
+    environment:
+      SIDECAR_ADDRESS: stage9-sidecar-order:18080
+      OTEL_SERVICE_NAME: order
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    depends_on: [stage9-sidecar-order, jaeger]

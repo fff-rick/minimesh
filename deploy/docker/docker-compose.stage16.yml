@@ -1,0 +1,145 @@
+services:
+  stage16-toxiproxy-control:
+    profiles: ["stage16"]
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    container_name: minimesh-stage16-control-faults
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy-control.json:/config/toxiproxy.json:ro
+    ports: ["38474:8474"]
+    depends_on: [etcd]
+
+  stage16-toxiproxy-network:
+    profiles: ["stage16"]
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    container_name: minimesh-stage16-network
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy-network.json:/config/toxiproxy.json:ro
+    ports: ["38475:8474"]
+    depends_on: [stage16-echo-network]
+
+  stage9-control-plane:
+    image: minimesh-stage16-go:latest
+    build: null
+    entrypoint: ["/usr/local/bin/control-plane"]
+    command: ["--listen=:17070", "--control-listen=:17071", "--etcd=http://stage16-toxiproxy-control:22379"]
+    depends_on:
+      etcd: {condition: service_healthy}
+      stage16-toxiproxy-control: {condition: service_started}
+
+  stage9-sidecar-order:
+    image: minimesh-stage16-go:latest
+    build: null
+    entrypoint: ["/usr/local/bin/sidecar"]
+    command: ["--listen=:18080", "--metrics-listen=:18081", "--control-plane=stage16-toxiproxy-control:27071", "--sidecar-id=stage16-order", "--max-attempts=3", "--service-name=sidecar-order", "--otel-endpoint=http://jaeger:4318/v1/traces"]
+    depends_on: [stage9-control-plane, stage16-toxiproxy-control, jaeger]
+
+  stage9-sidecar-inventory:
+    image: minimesh-stage16-go:latest
+    build: null
+    entrypoint: ["/usr/local/bin/sidecar"]
+    command: ["--listen=:18080", "--metrics-listen=:18081", "--control-plane=stage16-toxiproxy-control:27071", "--sidecar-id=stage16-inventory", "--max-attempts=3", "--service-name=sidecar-inventory", "--otel-endpoint=http://jaeger:4318/v1/traces"]
+    depends_on: [stage9-control-plane, stage16-toxiproxy-control, jaeger]
+
+  stage9-sidecar-recommendation:
+    profiles: ["stage16"]
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/sidecar"]
+    command: ["--listen=:18080", "--metrics-listen=:18081", "--control-plane=stage16-toxiproxy-control:27071", "--sidecar-id=stage16-recommendation", "--max-attempts=3", "--service-name=sidecar-recommendation", "--otel-endpoint=http://jaeger:4318/v1/traces"]
+    depends_on: [stage9-control-plane, stage16-toxiproxy-control, jaeger]
+
+  stage16-sidecar-chaos:
+    profiles: ["stage16"]
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/sidecar"]
+    command:
+      - --listen=:18080
+      - --metrics-listen=:18081
+      - --control-plane=stage16-toxiproxy-control:27071
+      - --sidecar-id=stage16-chaos
+      - --lb=round_robin
+      - --request-timeout=750ms
+      - --max-attempts=3
+      - --retry-backoff=10ms
+      - --circuit-window=5
+      - --circuit-min-requests=4
+      - --circuit-failure-rate=0.5
+      - --circuit-cooldown=2s
+      - --circuit-half-open-probes=1
+      - --service-rate-limits=limited=2:2
+      - --service-name=sidecar-chaos
+      - --otel-endpoint=http://jaeger:4318/v1/traces
+    ports: ["38084:18081"]
+    depends_on: [stage9-control-plane, stage16-toxiproxy-control, jaeger]
+
+  stage16-echo-a:
+    profiles: ["stage16"]
+    container_name: minimesh-stage16-echo-a
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/faulty-echo"]
+    command: ["--listen=:19090", "--id=healthy-a", "--mode=healthy"]
+
+  stage16-echo-b:
+    profiles: ["stage16"]
+    container_name: minimesh-stage16-echo-b
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/faulty-echo"]
+    command: ["--listen=:19090", "--id=healthy-b", "--mode=healthy"]
+
+  stage16-echo-faulty:
+    profiles: ["stage16"]
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/faulty-echo"]
+    command: ["--listen=:19090", "--id=faulty-80", "--mode=percentage", "--failure-percent=80"]
+
+  stage16-echo-slow:
+    profiles: ["stage16"]
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/faulty-echo"]
+    command: ["--listen=:19090", "--id=slow", "--mode=timeout", "--delay=3s"]
+
+  stage16-echo-network:
+    profiles: ["stage16"]
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/faulty-echo"]
+    command: ["--listen=:19090", "--id=network", "--mode=healthy"]
+
+  stage16-probe:
+    profiles: ["stage16-client"]
+    image: minimesh-stage16-go:latest
+    entrypoint: ["/usr/local/bin/probe"]
+    depends_on: [stage16-sidecar-chaos]
+
+  stage16-rust-agent:
+    profiles: ["stage16"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/stage16-rust.Dockerfile
+    image: minimesh-stage16-rust-agent:latest
+    environment:
+      CONTROL_PLANE_ENDPOINT: stage9-control-plane:17070/healthz
+      PROMETHEUS_ENDPOINT: prometheus:9090/-/ready
+      JAEGER_ENDPOINT: jaeger:16686/
+    ports: ["39100:19100"]
+    depends_on: [stage9-control-plane, prometheus, jaeger]
+
+  prometheus:
+    volumes:
+      - ../observability/prometheus-stage16.yml:/etc/prometheus/prometheus.yml:ro
+
+  stage9-inventory:
+    image: minimesh-stage16-go:latest
+    build: null
+    entrypoint: ["/usr/local/bin/inventory"]
+
+  stage9-recommendation:
+    image: minimesh-stage16-python:latest
+
+
+  grafana:
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    depends_on: [prometheus, jaeger]
